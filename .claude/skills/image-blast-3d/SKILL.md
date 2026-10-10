@@ -1,7 +1,7 @@
 ---
 name: image-blast-3d
 description: Generate one specified atomic 3D object. Use when the user names exactly one object instance to make, or provides one image plus the object name/description.
-argument-hint: [world-name] [object-id/name or image path + object description] [--image-edit-prompt prompt] [--provider meshy|hunyuan] [--regenerate] [--regenerate-reference] [--target-polycount N] [--face-count N] [--generate-type Normal|LowPoly|Geometry] [--polygon-type triangle|quadrilateral] [--enable-pbr true|false]
+argument-hint: [world-name] [object-id/name or image path + object description] [--image-edit-prompt prompt] [--provider tripo|hunyuan] [--regenerate] [--regenerate-reference] [--target-polycount N] [--face-count N] [--generate-type Normal|LowPoly|Geometry] [--polygon-type triangle|quadrilateral] [--enable-pbr true|false]
 allowed-tools: Read Write Glob Bash(ls *) Bash(node .claude/scripts/project/project-state.mjs *) Bash(node .claude/scripts/project/ensure-local-assets.mjs *) Bash(node .claude/scripts/asset-pipeline/generate-single-asset.mjs *)
 context: fork
 agent: image-blast-3d
@@ -56,40 +56,11 @@ If request metadata records provider URLs but local model or image files are mis
 node .claude/scripts/project/ensure-local-assets.mjs --from "<request-json-path>"
 ```
 
-Hunyuan is the default 3D provider. Hunyuan defaults are `--face-count 50000`, `--enable-pbr true`, and `--generate-type Normal`. If the user asks for more detail, polygon reduction, or a white geometry-only model, pass the matching options:
+Tripo through the company Mivo API is the default 3D provider. Use `--target-polycount 50000` to request the default face count and `--enable-pbr false` for geometry only. The default company Tripo version is `V3.1`; `MIVO_TRIPO_MODEL_VERSION` can select another enabled version with a compatible face count.
 
-- `--face-count <40000-1500000>`
-- `--generate-type Normal|LowPoly|Geometry`
-- `--polygon-type triangle|quadrilateral` for `LowPoly`
-- `--enable-pbr true|false`
+Pass `--provider hunyuan` only when the user asks for Hunyuan. Hunyuan supports `--face-count <40000-1500000>`, `--generate-type Normal|LowPoly|Geometry` and `--enable-pbr true|false`. Normal and Geometry use company Hunyuan 3.1; LowPoly uses V3.0 and triangle output because 3.1 does not support LowPoly.
 
-Pass `--provider meshy` only when the user asks for Meshy. Meshy defaults are:
-
-```json
-{
-  "topology": "triangle",
-  "target_polycount": 30000,
-  "symmetry_mode": "auto",
-  "should_remesh": true,
-  "should_texture": true,
-  "rigging_height_meters": 1.7,
-  "animation_action_id": 12,
-  "enable_safety_checker": true,
-  "enable_animation": false,
-  "enable_rigging": false,
-  "enable_pbr": true
-}
-```
-
-For Meshy-specific requests, pass the matching options:
-
-- `--target-polycount <integer>`
-- `--topology triangle`
-- `--symmetry-mode auto`
-- `--should-remesh true|false`
-- `--should-texture true|false`
-- `--enable-animation true|false`
-- `--enable-rigging true|false`
+Meshy is not available in the company capability catalog and is not a provider in this fork.
 
 For explicit model regeneration from the existing reference, append `--regenerate`. For a new source extraction and model, append `--regenerate-reference`. For direct single-image generation, use:
 

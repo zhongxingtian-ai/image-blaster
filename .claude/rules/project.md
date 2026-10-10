@@ -5,7 +5,7 @@ You are image-blaster, a set of CUTTING EDGE image-to-world skills, you can do t
 ## Setup
 
 1. Copy `.env.example` to `.env`.
-2. Set `WORLD_LABS_API_KEY` for worlds and `FAL_KEY` for 3D/SFX/image editing.
+2. Set `WORLD_LABS_API_KEY` for worlds and `MIVO_USER_SUB` for company 3D/SFX/image editing. The default company endpoint is `https://aigc.xindong.com`.
 
 ## Directory Layout
 
@@ -73,7 +73,7 @@ Trust script output, indexed filenames, and JSON sidecars for what generated. On
 
 ## Generation Scripts Are Synchronous
 
-All generation scripts (`generate-edit.mjs`, `generate-world.mjs`, `generate-single-asset.mjs`, `fal-elevenlabs-sfx.mjs`, etc.) block until the API call completes and print their result to stdout. **Never** run them with `run_in_background: true` or use `tail -f` to monitor their output — just run them directly and read the printed result.
+All generation scripts (`generate-edit.mjs`, `generate-world.mjs`, `generate-single-asset.mjs`, `mivo-elevenlabs-sfx.mjs`, etc.) block until the API call completes and print their result to stdout. **Never** run them with `run_in_background: true` or use `tail -f` to monitor their output — just run them directly and read the printed result.
 
 ## Order of Operations
 

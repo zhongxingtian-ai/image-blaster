@@ -1,19 +1,19 @@
 #!/usr/bin/env node
+import { callMivoTask, resumeMivoTask, isUncertainSubmission } from "../asset-pipeline/mivo-client.mjs";
 import { execFile } from "node:child_process";
+import { randomUUID } from "node:crypto";
+import path from "node:path";
 import { rename, stat, unlink } from "node:fs/promises";
 import {
-  callFalQueue,
   downloadFile,
   ensureDir,
-  getFalQueueResult,
   one,
   parseArgs,
   pathExists,
-  pollFalQueue,
   readJson,
   slugify,
   writeJson
-} from "../asset-pipeline/fal-queue.mjs";
+} from "../asset-pipeline/pipeline-utils.mjs";
 import {
   artifactPath,
   buildRequestSummary,
@@ -22,7 +22,7 @@ import {
   requestPath
 } from "../asset-pipeline/request-metadata.mjs";
 
-const ENDPOINT = "fal-ai/elevenlabs/sound-effects/v2";
+const ENDPOINT = "audio.elevenlabs-sound-effect";
 const DEFAULT_OUTPUT_FORMAT = "mp3_44100_128";
 const SILENCE_THRESHOLD_DB = "-45dB";
 const START_SILENCE_SECONDS = "0.03";
@@ -69,27 +69,12 @@ function statusText(value) {
 
 function isActiveRequest(request) {
   const status = statusText(request.data?.status);
-  return Boolean(request.data?.request_id && request.data?.endpoint) &&
+  return (isUncertainSubmission(request) || Boolean(request.data?.request_id && request.data?.endpoint)) &&
     !["completed", "failed", "cancelled", "canceled"].includes(status);
 }
 
-async function resumeFalRequest(request, pollIntervalMs = 3000) {
-  const status = await pollFalQueue(request.data.endpoint, request.data.request_id, {
-    statusUrl: request.data.status_url,
-    metadataPath: request.path,
-    pollIntervalMs
-  });
-  const result = await getFalQueueResult(request.data.endpoint, request.data.request_id, {
-    responseUrl: request.data.response_url,
-    metadataPath: request.path
-  });
-
-  return {
-    requestId: request.data.request_id,
-    submittedAt: request.data.submitted_at,
-    status: status.status,
-    data: result.data
-  };
+async function resumeMivoRequest(request, pollIntervalMs = 3000) {
+  return resumeMivoTask(request, { pollIntervalMs });
 }
 
 function runCommand(command, args, options = {}) {
@@ -243,7 +228,7 @@ function scoreAudio(analysis) {
 export async function analyzeAndPostprocessAudio(filePath, options = {}) {
   const extension = options.extension ?? ".mp3";
   const postprocess = options.postprocess !== false;
-  const before = await analyzeAudio(filePath);
+  const before = postprocess ? await analyzeAudio(filePath) : {};
 
   if (!postprocess || !canPostprocessExtension(extension)) {
     return {
@@ -304,9 +289,10 @@ export async function generateSfx(options) {
 
   const requestedCount = clampCount(count);
   const duration = asNumber(durationSeconds, undefined);
-  if (duration !== undefined && (duration < 0.5 || duration > 22)) {
-    throw new Error("durationSeconds must be between 0.5 and 22 for the FAL ElevenLabs SFX endpoint.");
+  if (duration !== undefined && (duration < 0.5 || duration > 30)) {
+    throw new Error("durationSeconds must be between 0.5 and 30 for the company ElevenLabs capability.");
   }
+  if (outputFormat !== DEFAULT_OUTPUT_FORMAT) throw new Error("Company ElevenLabs returns MP3; use the default output format.");
 
   const influence = asNumber(promptInfluence, 0.3);
   if (influence < 0 || influence > 1) {
@@ -324,40 +310,55 @@ export async function generateSfx(options) {
   }
   const files = [];
   const requests = [];
+  const batchPath = path.join(outputDir, `.${slugify(prefix)}-sfx-batch.json`);
+  const previousBatch = await readJsonIfExists(batchPath);
+  const settings = { prompt, count: requestedCount, loop: Boolean(loop), duration: duration ?? null, influence, outputFormat, kind };
+  const recovering = previousBatch?.status === "running" && JSON.stringify(previousBatch.settings) === JSON.stringify(settings);
+  const batchId = recovering ? previousBatch.id : randomUUID();
+  await writeJson(batchPath, { id: batchId, status: "running", settings });
 
   for (let index = 0; index < requestedCount; index += 1) {
     const input = {
-      text: prompt,
+      prompt,
+      taskType: "generate_sound_effect",
+      n: 1,
+      smartPrompt: false,
       loop: Boolean(loop),
-      prompt_influence: influence,
-      output_format: outputFormat
+      promptInfluence: influence
     };
-    if (duration !== undefined) input.duration_seconds = duration;
+    if (duration !== undefined) input.duration = duration;
 
     const audioPrefix = requestedCount > 1 ? `${prefix}-${index + 1}` : prefix;
-    const activeRequest = (await requestMetadataFiles(outputDir, { slug: audioPrefix })).find(isActiveRequest);
+    const activeRequest = (await requestMetadataFiles(outputDir, { slug: audioPrefix })).find((request) => request.data.batch_id === batchId && (isActiveRequest(request) || request.data.status === "completed"));
     const requestIndex = activeRequest?.index ?? await nextIndex(outputDir, audioPrefix);
     const metadataPath = activeRequest?.path ?? requestPath(outputDir, requestIndex, audioPrefix);
+    const completedLocal = activeRequest?.data.status === "completed" && activeRequest.data.output_files?.length && await pathExists(activeRequest.data.output_files[0]);
     const result = activeRequest
-      ? await resumeFalRequest(activeRequest)
-      : await callFalQueue(ENDPOINT, input, {
+      ? completedLocal
+        ? { requestId: activeRequest.data.request_id, submittedAt: activeRequest.data.submitted_at, data: activeRequest.data.result }
+        : await resumeMivoRequest(activeRequest)
+      : await callMivoTask(ENDPOINT, input, {
           metadataPath,
           metadata: {
             kind: "sfx",
             sfx_kind: kind,
             provider: ENDPOINT,
-            index: requestIndex
+            index: requestIndex,
+            batch_id: batchId
           },
           pollIntervalMs: 3000
         });
-    const audioUrl = result.data?.audio?.url;
+    const audio = result.data?.files?.find((file) => file.content_type?.startsWith("audio/") || /\.(mp3|wav|opus)$/i.test(file.file_name));
+    const audioUrl = audio?.url;
     if (!audioUrl) {
-      throw new Error("FAL SFX result did not include audio.url.");
+      throw new Error("Mivo SFX result did not include an audio file.");
     }
 
     const audioPath = artifactPath(outputDir, requestIndex, audioPrefix, extension);
-    await downloadFile(audioUrl, audioPath);
-    const audioAnalysis = await analyzeAndPostprocessAudio(audioPath, {
+    if (!completedLocal) await downloadFile(audioUrl, audioPath);
+    const audioAnalysis = completedLocal && activeRequest.data.audio_analysis
+      ? activeRequest.data.audio_analysis
+      : await analyzeAndPostprocessAudio(audioPath, {
       extension,
       postprocess: shouldPostprocess
     });
@@ -365,7 +366,7 @@ export async function generateSfx(options) {
     const file = {
       path: audioPath,
       url: audioUrl,
-      source: result.data.audio,
+      source: audio,
       output_format: outputFormat,
       loop: Boolean(loop),
       duration_seconds: audioAnalysis.after.duration_seconds ?? duration,
@@ -388,7 +389,8 @@ export async function generateSfx(options) {
       provider: ENDPOINT,
       metadata: {
         index: requestIndex,
-        sfx_kind: kind
+        sfx_kind: kind,
+        batch_id: batchId
       },
       requestId: result.requestId,
       submittedAt: result.submittedAt,
@@ -398,7 +400,7 @@ export async function generateSfx(options) {
       downloadedFiles: [{
         label: "audio",
         path: audioPath,
-        source: result.data.audio
+        source: audio
       }],
       result: result.data,
       extra: {
@@ -421,6 +423,7 @@ export async function generateSfx(options) {
     files,
     requests
   };
+  await writeJson(batchPath, { id: batchId, status: "completed", settings });
 
   return {
     ...run,
@@ -436,7 +439,7 @@ async function main() {
 
   if (!prompt || !outputDir) {
     throw new Error(
-      "Usage: node fal-elevenlabs-sfx.mjs --prompt <description> --output-dir <dir> [--count 1-4] [--loop] [--duration-seconds <0.5-22>]"
+      "Usage: node mivo-elevenlabs-sfx.mjs --prompt <description> --output-dir <dir> [--count 1-4] [--loop] [--duration-seconds <0.5-22>]"
     );
   }
 

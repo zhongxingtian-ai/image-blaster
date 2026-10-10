@@ -1,11 +1,13 @@
 #!/usr/bin/env node
 import {
   one,
+  normalizeBoolean,
+  loadDotEnv,
   parseArgs,
-} from "./fal-queue.mjs";
-import { runFalImageTo3DProvider } from "./fal-3d-provider.mjs";
+} from "./pipeline-utils.mjs";
+import { runMivoImageTo3DProvider } from "./mivo-3d-provider.mjs";
 
-export const HUNYUAN_3D_ENDPOINT = "fal-ai/hunyuan3d-v3/image-to-3d";
+export const HUNYUAN_3D_ENDPOINT = "model3d.hunyuan";
 export const HUNYUAN_3D_PROVIDER = "hunyuan";
 export const DEFAULT_HUNYUAN_FACE_COUNT = 50000;
 export const DEFAULT_HUNYUAN_ENABLE_PBR = true;
@@ -50,15 +52,8 @@ function normalizePolygonType(value) {
   return normalized;
 }
 
-function normalizeBoolean(value) {
-  if (typeof value === "boolean") return value;
-  const normalized = String(value).trim().toLowerCase();
-  if (["true", "1", "yes", "on"].includes(normalized)) return true;
-  if (["false", "0", "no", "off"].includes(normalized)) return false;
-  throw new Error("enable-pbr must be true or false.");
-}
-
 export async function runHunyuan3D(options) {
+  await loadDotEnv();
   const {
     image,
     outputDir,
@@ -78,26 +73,23 @@ export async function runHunyuan3D(options) {
 
   const normalizedFaceCount = normalizeFaceCount(faceCount);
   const normalizedGenerateType = normalizeGenerateType(generateType);
-  const normalizedEnablePbr = normalizeBoolean(enablePbr);
+  const normalizedEnablePbr = normalizeBoolean(enablePbr, "enable-pbr");
   const normalizedPolygonType = normalizePolygonType(polygonType);
 
   const input = {
-    generate_type: normalizedGenerateType,
-    enable_pbr: normalizedEnablePbr,
-    face_count: normalizedFaceCount
+    generateType: normalizedGenerateType === "LowPoly" ? "LOWPOLY" : normalizedGenerateType === "Geometry" || !normalizedEnablePbr ? "WHITE" : "PBR",
+    faceCount: normalizedFaceCount
   };
-  if (normalizedGenerateType === "LowPoly") {
-    input.polygon_type = normalizedPolygonType;
-  }
+  if (normalizedGenerateType === "LowPoly" && normalizedPolygonType !== "triangle") throw new Error("Company Hunyuan LOWPOLY supports triangle output only.");
 
-  return runFalImageTo3DProvider({
+  return runMivoImageTo3DProvider({
     endpoint: HUNYUAN_3D_ENDPOINT,
     providerSlug: HUNYUAN_3D_PROVIDER,
-    imageInputKey: "input_image_url",
     image,
     outputDir,
     assetName,
     input,
+    modelVersion: normalizedGenerateType === "LowPoly" ? "V3.0" : process.env.MIVO_HUNYUAN_MODEL_VERSION || "3.1",
     metadataPath,
     metadata,
     pollIntervalMs: 10000,

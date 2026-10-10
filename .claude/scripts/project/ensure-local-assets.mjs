@@ -10,7 +10,7 @@ import {
   pathExists,
   readJson,
   safeFileName
-} from "../asset-pipeline/fal-queue.mjs";
+} from "../asset-pipeline/pipeline-utils.mjs";
 import {
   artifactPath,
   parseIndexedName

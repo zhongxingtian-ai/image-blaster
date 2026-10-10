@@ -3,7 +3,7 @@ import path from "node:path";
 import {
   one,
   parseArgs
-} from "../asset-pipeline/fal-queue.mjs";
+} from "../asset-pipeline/pipeline-utils.mjs";
 import {
   artifactPath,
   latestIndexed,

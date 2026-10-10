@@ -5,7 +5,7 @@ import {
   one,
   parseArgs,
   pathExists
-} from "../asset-pipeline/fal-queue.mjs";
+} from "../asset-pipeline/pipeline-utils.mjs";
 
 const ALLOWED_ROOTS = ["worlds", "input"];
 

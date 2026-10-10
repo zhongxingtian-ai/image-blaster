@@ -1,20 +1,19 @@
 #!/usr/bin/env node
+import { resumeMivoTask, isUncertainSubmission } from "../asset-pipeline/mivo-client.mjs";
 import { rename } from "node:fs/promises";
 import path from "node:path";
 import { runImageEdit } from "../asset-pipeline/image-edit.mjs";
 import {
   downloadRemoteFiles,
   ensureDir,
-  getFalQueueResult,
   many,
   one,
   parseArgs,
   pathExists,
-  pollFalQueue,
   readJson,
   slugify,
   writeJson
-} from "../asset-pipeline/fal-queue.mjs";
+} from "../asset-pipeline/pipeline-utils.mjs";
 import {
   artifactPath,
   buildRequestSummary,
@@ -42,19 +41,12 @@ function statusText(value) {
 
 function isActiveRequest(request) {
   const status = statusText(request.data?.status);
-  return Boolean(request.data?.request_id && request.data?.endpoint) &&
+  return (isUncertainSubmission(request) || Boolean(request.data?.request_id && request.data?.endpoint)) &&
     !["completed", "failed", "cancelled", "canceled"].includes(status);
 }
 
 async function resumeImageEditRequest(request, outputDir, slug) {
-  const status = await pollFalQueue(request.data.endpoint, request.data.request_id, {
-    statusUrl: request.data.status_url,
-    metadataPath: request.path
-  });
-  const result = await getFalQueueResult(request.data.endpoint, request.data.request_id, {
-    responseUrl: request.data.response_url,
-    metadataPath: request.path
-  });
+  const result = await resumeMivoTask(request, { pollIntervalMs: 5000 });
   const downloaded = await downloadRemoteFiles(result.data, outputDir, slug);
   const summary = buildRequestSummary({
     kind: "2d",
@@ -75,7 +67,7 @@ async function resumeImageEditRequest(request, outputDir, slug) {
     outputFiles: downloaded.map((file) => file.path),
     downloadedFiles: downloaded,
     result: result.data,
-    extra: { queue_status: status.status }
+    extra: { queue_status: result.queueStatus }
   });
 
   await writeJson(request.path, summary);

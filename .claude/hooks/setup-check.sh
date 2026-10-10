@@ -17,7 +17,7 @@ env_key_is_set() {
   [ -n "$value" ] || return 1
 
   case "$value" in
-    your_world_labs_key_here|your_fal_key_here|changeme|CHANGE_ME|TODO|todo)
+    your_world_labs_key_here|your_mivo_key_here|changeme|CHANGE_ME|TODO|todo)
       return 1
       ;;
   esac
@@ -48,16 +48,16 @@ if ! env_key_is_set "WORLD_LABS_API_KEY"; then
   missing_env_key=1
 fi
 
-if ! env_key_is_set "FAL_KEY"; then
-  print_key_help "FAL_KEY" "3D models, SFX, and image editing" "https://fal.ai/"
+if ! env_key_is_set "MIVO_USER_SUB"; then
+  print_key_help "MIVO_USER_SUB" "company Tripo/Hunyuan 3D, sound effects, and image editing" "https://aigc.xindong.com/"
   missing_env_key=1
 fi
 
 if [ "$missing_env_key" -eq 1 ]; then
   if [ "$env_file_exists" -eq 0 ]; then
-    echo "   Tell the user: paste the key(s) here after visiting those URLs, and I can create .env from .env.example or add them for you."
+    echo "   Create .env from .env.example and configure keys locally. Do not paste keys into chat."
   else
-    echo "   Tell the user: paste the missing key(s) here after visiting the URL(s), and I can update .env for you."
+    echo "   Configure the missing keys in .env locally. Do not paste keys into chat."
   fi
 fi
 

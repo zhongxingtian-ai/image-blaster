@@ -1,20 +1,21 @@
 #!/usr/bin/env node
-import path from "node:path";
+import { callMivoTask } from "./mivo-client.mjs";
 import {
-  callFalQueue,
   downloadRemoteFiles,
   ensureDir,
+  loadDotEnv,
   many,
   one,
   parseArgs,
   toModelInputUrl,
   writeJson
-} from "./fal-queue.mjs";
+} from "./pipeline-utils.mjs";
 import { buildRequestSummary, requestPath } from "./request-metadata.mjs";
 
-const ENDPOINT = "openai/gpt-image-2/edit";
+const ENDPOINT = "image.gpt";
 
 export async function runGptImage2Edit(options) {
+  await loadDotEnv();
   const {
     prompt,
     images,
@@ -36,29 +37,28 @@ export async function runGptImage2Edit(options) {
 
   await ensureDir(outputDir);
 
-  const imageUrls = [];
-  for (const image of images) {
-    imageUrls.push(await toModelInputUrl(image));
-  }
-
   const input = {
     prompt,
-    image_urls: imageUrls,
-    image_size: imageSize,
+    images,
     quality,
-    num_images: Number(numImages),
+    n: Number(numImages),
     output_format: outputFormat
   };
-
-  if (maskImage) {
-    input.mask_image_url = await toModelInputUrl(maskImage);
+  if (imageSize !== "auto") {
+    if (!/^\d+x\d+$/.test(imageSize)) throw new Error("Company GPT image size must be auto or widthxheight.");
+    input.size = imageSize;
   }
 
-  const result = await callFalQueue(ENDPOINT, input, {
+  if (maskImage) {
+    input.maskBase64 = await toModelInputUrl(maskImage);
+  }
+
+  const result = await callMivoTask(ENDPOINT, input, {
     metadataPath: metadataPath || requestPath(outputDir, 0, "gpt-image-2"),
     metadata: { kind: "2d", provider: ENDPOINT, ...metadata },
     onSubmit,
-    onStatus
+    onStatus,
+    modelVersion: process.env.MIVO_GPT_MODEL_VERSION || (maskImage ? "gpt-image-2.5-sunburst" : "gpt-image-2")
   });
 
   const downloaded = await downloadRemoteFiles(result.data, outputDir, "gpt-image-2");

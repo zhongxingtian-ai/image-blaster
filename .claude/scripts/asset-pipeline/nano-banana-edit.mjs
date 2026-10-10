@@ -1,20 +1,20 @@
 #!/usr/bin/env node
-import path from "node:path";
+import { callMivoTask } from "./mivo-client.mjs";
 import {
-  callFalQueue,
   downloadRemoteFiles,
   ensureDir,
+  loadDotEnv,
   many,
   one,
   parseArgs,
-  toModelInputUrl,
   writeJson
-} from "./fal-queue.mjs";
+} from "./pipeline-utils.mjs";
 import { buildRequestSummary, requestPath } from "./request-metadata.mjs";
 
-const ENDPOINT = "fal-ai/nano-banana-2/edit";
+const ENDPOINT = "image.nano-banana";
 
 export async function runNanoBananaEdit(options) {
+  await loadDotEnv();
   const {
     prompt,
     images,
@@ -23,9 +23,6 @@ export async function runNanoBananaEdit(options) {
     resolution = "1K",
     aspectRatio = "auto",
     outputFormat = "png",
-    safetyTolerance = "4",
-    limitGenerations = true,
-    seed,
     metadataPath,
     metadata = {},
     onSubmit,
@@ -38,28 +35,21 @@ export async function runNanoBananaEdit(options) {
 
   await ensureDir(outputDir);
 
-  const imageUrls = [];
-  for (const image of images) {
-    imageUrls.push(await toModelInputUrl(image));
-  }
-
   const input = {
     prompt,
-    image_urls: imageUrls,
-    num_images: Number(numImages),
-    aspect_ratio: aspectRatio,
-    output_format: outputFormat,
-    safety_tolerance: String(safetyTolerance),
-    resolution,
-    limit_generations: Boolean(limitGenerations)
+    images,
+    n: Number(numImages),
+    imgRatio: aspectRatio,
+    resolution
   };
-  if (seed !== undefined) input.seed = Number(seed);
+  if (outputFormat !== "png") throw new Error("Company Nano Banana returns PNG; use --format png.");
 
-  const result = await callFalQueue(ENDPOINT, input, {
+  const result = await callMivoTask(ENDPOINT, input, {
     metadataPath: metadataPath || requestPath(outputDir, 0, "nano-banana"),
     metadata: { kind: "2d", provider: ENDPOINT, ...metadata },
     onSubmit,
-    onStatus
+    onStatus,
+    modelVersion: process.env.MIVO_NANO_MODEL_VERSION
   });
 
   const downloaded = await downloadRemoteFiles(result.data, outputDir, "nano-banana");
@@ -100,9 +90,6 @@ async function main() {
     resolution: one(flags, "resolution", "1K"),
     aspectRatio: one(flags, "aspect-ratio", "auto"),
     outputFormat: one(flags, "format", "png"),
-    safetyTolerance: one(flags, "safety-tolerance", "4"),
-    limitGenerations: one(flags, "limit-generations", "true") !== "false",
-    seed: one(flags, "seed")
   });
 
   console.log(JSON.stringify(summary, null, 2));

@@ -9,6 +9,7 @@
     "build": "bun --cwd=app run build",
     "preview": "bun --cwd=app run preview",
     "test": "bun --cwd=app run test",
-    "typecheck": "bun --cwd=app run typecheck"
+    "typecheck": "bun --cwd=app run typecheck",
+    "test:api": "node --test tests/*.test.mjs"
   }
 }

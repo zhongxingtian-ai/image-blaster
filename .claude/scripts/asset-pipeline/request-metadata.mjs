@@ -1,6 +1,6 @@
 import { readdir } from "node:fs/promises";
 import path from "node:path";
-import { ensureDir, readJson, safeFileName, stripBase64 } from "./fal-queue.mjs";
+import { ensureDir, readJson, safeFileName, stripBase64 } from "./pipeline-utils.mjs";
 
 export function parseIndexedName(value) {
   const fileName = path.basename(value || "");

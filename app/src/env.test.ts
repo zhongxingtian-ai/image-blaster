@@ -10,8 +10,8 @@ describe('env vars', () => {
     expect(process.env.WORLD_LABS_API_KEY!.length).toBeGreaterThan(0)
   })
 
-  it('FAL_KEY is set', () => {
-    expect(typeof process.env.FAL_KEY).toBe('string')
-    expect(process.env.FAL_KEY!.length).toBeGreaterThan(0)
+  it('MIVO_USER_SUB is set', () => {
+    expect(typeof process.env.MIVO_USER_SUB).toBe('string')
+    expect(process.env.MIVO_USER_SUB!.length).toBeGreaterThan(0)
   })
 })

@@ -1,21 +1,20 @@
+import { callMivoTask } from "./mivo-client.mjs";
 import {
-  callFalQueue,
   downloadRemoteFiles,
   ensureDir,
-  toModelInputUrl,
   writeJson
-} from "./fal-queue.mjs";
+} from "./pipeline-utils.mjs";
 import { buildRequestSummary, requestPath } from "./request-metadata.mjs";
 
-export async function runFalImageTo3DProvider(options) {
+export async function runMivoImageTo3DProvider(options) {
   const {
     endpoint,
     providerSlug,
-    imageInputKey,
     image,
     outputDir,
     assetName,
     input,
+    modelVersion,
     metadataPath,
     metadata = {},
     pollIntervalMs = 10000,
@@ -25,7 +24,6 @@ export async function runFalImageTo3DProvider(options) {
 
   if (!endpoint) throw new Error("endpoint is required.");
   if (!providerSlug) throw new Error("providerSlug is required.");
-  if (!imageInputKey) throw new Error("imageInputKey is required.");
   if (!image) throw new Error("Input image is required.");
   if (!outputDir) throw new Error("outputDir is required.");
 
@@ -33,11 +31,11 @@ export async function runFalImageTo3DProvider(options) {
 
   const normalizedInput = {
     ...input,
-    [imageInputKey]: await toModelInputUrl(image)
+    images: [image]
   };
   const requestMetadataPath = metadataPath || requestPath(outputDir, 0, providerSlug);
 
-  const result = await callFalQueue(endpoint, normalizedInput, {
+  const result = await callMivoTask(endpoint, normalizedInput, {
     metadataPath: requestMetadataPath,
     metadata: {
       kind: "3d",
@@ -47,6 +45,7 @@ export async function runFalImageTo3DProvider(options) {
       ...metadata
     },
     pollIntervalMs,
+    modelVersion,
     onSubmit,
     onStatus
   });

@@ -176,7 +176,7 @@ export async function downloadFile(url, outputPath) {
 
   const response = await fetch(url);
   if (!response.ok) {
-    throw new Error(`Download failed (${response.status}) for ${url}`);
+    throw new Error(`Download failed (${response.status}) from ${new URL(url).origin}`);
   }
 
   const buffer = Buffer.from(await response.arrayBuffer());
@@ -256,6 +256,7 @@ function isBase64Field(key) {
 }
 
 export function stripBase64(value, key = "") {
+  if (["authorization", "apikey", "mivousersub", "usersub", "session", "accesstoken", "refreshtoken", "password"].includes(String(key).replace(/[_-]/g, "").toLowerCase())) return "[redacted]";
   if (typeof value === "string") {
     if (isDataUri(value) || isBase64Field(key)) return "[stripped]";
     return value;
@@ -279,174 +280,21 @@ export function stripBase64(value, key = "") {
 
 export const sanitizeForMetadata = stripBase64;
 
-async function updateMetadata(metadataPath, patch) {
+export function normalizeBoolean(value, fieldName = "boolean") {
+  if (typeof value === "boolean") return value;
+  const normalized = String(value).trim().toLowerCase();
+  if (["true", "1", "yes", "on"].includes(normalized)) return true;
+  if (["false", "0", "no", "off"].includes(normalized)) return false;
+  throw new Error(`${fieldName} must be true or false.`);
+}
+
+export async function updateMetadata(metadataPath, patch) {
   if (!metadataPath) return;
   const previous = (await pathExists(metadataPath)) ? await readJson(metadataPath) : {};
-  await writeJson(metadataPath, {
+  await writeJson(metadataPath, sanitizeForMetadata({
     schema_version: 1,
     ...previous,
     ...patch,
     updated_at: new Date().toISOString()
-  });
-}
-
-export async function submitFalQueue(endpoint, input, options = {}) {
-  const {
-    metadataPath,
-    metadata = {},
-    onSubmit
-  } = options;
-
-  const falKey = await requireEnv("FAL_KEY");
-  const submittedAt = new Date().toISOString();
-
-  const submitResponse = await fetch(`https://queue.fal.run/${endpoint}`, {
-    method: "POST",
-    headers: {
-      Authorization: `Key ${falKey}`,
-      "Content-Type": "application/json"
-    },
-    body: JSON.stringify(input)
-  });
-
-  const submitBody = await submitResponse.json().catch(() => ({}));
-
-  if (!submitResponse.ok) {
-    throw new Error(`FAL submit failed (${submitResponse.status}).`);
-  }
-
-  const requestId = submitBody.request_id;
-  if (!requestId) {
-    throw new Error("FAL submit response did not include request_id.");
-  }
-
-  const submitted = stripBase64({
-    ...metadata,
-    endpoint,
-    request_id: requestId,
-    status: "submitted",
-    submitted_at: submittedAt,
-    status_url: submitBody.status_url,
-    response_url: submitBody.response_url
-  });
-
-  await updateMetadata(metadataPath, submitted);
-  if (onSubmit) await onSubmit(submitted);
-
-  return submitted;
-}
-
-export async function pollFalQueue(endpoint, requestId, options = {}) {
-  const {
-    statusUrl: providedStatusUrl,
-    metadataPath,
-    pollIntervalMs = 5000,
-    logs = true,
-    onStatus
-  } = options;
-
-  const falKey = await requireEnv("FAL_KEY");
-  let statusBody;
-  while (true) {
-    const requestStatusUrl = new URL(
-      providedStatusUrl || `https://queue.fal.run/${endpoint}/requests/${requestId}/status`
-    );
-    if (logs) requestStatusUrl.searchParams.set("logs", "1");
-
-    const statusResponse = await fetch(requestStatusUrl, {
-      headers: { Authorization: `Key ${falKey}` }
-    });
-    statusBody = await statusResponse.json().catch(() => ({}));
-
-    if (!statusResponse.ok) {
-      throw new Error(`FAL status failed (${statusResponse.status}).`);
-    }
-
-    const statusPatch = {
-      endpoint,
-      request_id: requestId,
-      status: statusBody.status || "UNKNOWN",
-      checked_at: new Date().toISOString(),
-      queue_status: sanitizeForMetadata(statusBody)
-    };
-    await updateMetadata(metadataPath, statusPatch);
-    if (onStatus) await onStatus(statusPatch);
-
-    if (statusBody.status === "COMPLETED") {
-      if (statusBody.error) {
-        const message = typeof statusBody.error === "string" ? `: ${statusBody.error}` : "";
-        throw new Error(`FAL request failed${message}.`);
-      }
-      break;
-    }
-
-    await new Promise((resolve) => setTimeout(resolve, pollIntervalMs));
-  }
-
-  return {
-    endpoint,
-    request_id: requestId,
-    status: statusBody
-  };
-}
-
-export async function getFalQueueResult(endpoint, requestId, options = {}) {
-  const {
-    responseUrl,
-    metadataPath
-  } = options;
-
-  const falKey = await requireEnv("FAL_KEY");
-  const resultUrl = responseUrl || `https://queue.fal.run/${endpoint}/requests/${requestId}`;
-  const resultResponse = await fetch(resultUrl, {
-    headers: { Authorization: `Key ${falKey}` }
-  });
-  const resultBody = await resultResponse.json().catch(() => ({}));
-  if (!resultResponse.ok) {
-    throw new Error(`FAL result failed (${resultResponse.status}).`);
-  }
-
-  await updateMetadata(metadataPath, {
-    endpoint,
-    request_id: requestId,
-    status: "completed",
-    completed_at: new Date().toISOString(),
-    result: sanitizeForMetadata(resultBody)
-  });
-
-  return {
-    requestId,
-    data: resultBody
-  };
-}
-
-export async function callFalQueue(endpoint, input, options = {}) {
-  const {
-    metadataPath,
-    metadata = {},
-    pollIntervalMs = 5000,
-    logs = true,
-    onSubmit,
-    onStatus
-  } = options;
-
-  const submitted = await submitFalQueue(endpoint, input, { metadataPath, metadata, onSubmit });
-  const status = await pollFalQueue(endpoint, submitted.request_id, {
-    statusUrl: submitted.status_url,
-    metadataPath,
-    pollIntervalMs,
-    logs,
-    onStatus
-  });
-  const result = await getFalQueueResult(endpoint, submitted.request_id, {
-    responseUrl: submitted.response_url,
-    metadataPath
-  });
-
-  return {
-    requestId: submitted.request_id,
-    submittedAt: submitted.submitted_at,
-    status: status.status,
-    data: result.data
-  };
+  }));
 }

@@ -1,0 +1,25 @@
+name: Company API
+
+on:
+  pull_request:
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  regression:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: '20'
+      - name: Check script syntax
+        run: |
+          while IFS= read -r -d '' script; do
+            node --check "$script" || exit 1
+          done < <(find .claude/scripts -name '*.mjs' -print0)
+      - name: Test company API integration without real credentials
+        run: node --test tests/*.test.mjs

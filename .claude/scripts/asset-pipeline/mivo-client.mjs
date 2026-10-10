@@ -167,11 +167,16 @@ export function isUncertainSubmission(request) {
   return ["submitting", "submission_unknown"].includes(request?.data?.status) && !request.data.request_id;
 }
 
+function readTaskResult(requestId) {
+  // force reads the worker result instead of a potentially stale message projection.
+  return apiJson(`/message/${encodeURIComponent(requestId)}/result?force=true`);
+}
+
 export async function pollMivoTask(id, requestId, options = {}) {
   assertTask(id, requestId);
   const deadline = Date.now() + (options.timeoutMs ?? 30 * 60 * 1000);
   while (Date.now() < deadline) {
-    const result = await apiJson(`/message/${encodeURIComponent(requestId)}/result`);
+    const result = await readTaskResult(requestId);
     const state = String(result.status || result.content?.status || "unknown").toLowerCase();
     const done = ["completed", "success", "succeeded"].includes(state);
     const patch = { endpoint: id, request_id: requestId, api_provider: "mivo", status: done ? "downloading" : state, upstream_status: state, checked_at: new Date().toISOString() };
@@ -197,7 +202,7 @@ async function outputFile(id) {
 
 export async function getMivoTaskResult(id, requestId, options = {}) {
   assertTask(id, requestId);
-  const result = options.taskResult || await apiJson(`/message/${encodeURIComponent(requestId)}/result`);
+  const result = options.taskResult || await readTaskResult(requestId);
   const state = String(result.status || result.content?.status || "unknown").toLowerCase();
   if (!["completed", "success", "succeeded"].includes(state)) throw new Error("Mivo result is not completed.");
   const content = result.content || {};

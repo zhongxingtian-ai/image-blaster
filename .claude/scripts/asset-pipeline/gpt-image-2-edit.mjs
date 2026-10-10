@@ -41,6 +41,7 @@ export async function runGptImage2Edit(options) {
     prompt,
     images,
     quality,
+    background: "opaque",
     n: Number(numImages),
     output_format: outputFormat
   };

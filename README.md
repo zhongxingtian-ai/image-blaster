@@ -54,7 +54,7 @@ Tripo defaults to company version `V3.1` and `--target-polycount 50000`. `MIVO_T
 
 ### Company API tasks
 
-Images upload to Mivo before generation. Tasks save their company message ID before polling; interrupted commands resume that ID. An uncertain submission requires checking the company console before explicitly regenerating, so a lost response cannot silently create a second paid task. Existing FAL outputs remain usable locally; unfinished FAL tasks cannot be resumed through Mivo.
+Images upload to Mivo before generation. Polling forces a worker-state refresh instead of relying on a stale message projection. Tasks save their company message ID before polling; interrupted commands resume that ID. An uncertain submission requires checking the company console before explicitly regenerating, so a lost response cannot silently create a second paid task. Existing FAL outputs remain usable locally; unfinished FAL tasks cannot be resumed through Mivo. GPT editing requests an opaque background for compatibility with the company GPT Image 2 route.
 
 Search the company catalog, or run a confirmed generation capability:
 

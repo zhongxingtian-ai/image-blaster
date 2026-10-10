@@ -113,6 +113,7 @@ test("image editing uploads references to Mivo and downloads the generated image
   assert.equal(generated.action, "modal");
   assert.deepEqual(generated.payload.images, ["input-file-id"]);
   assert.equal(result.downloaded_files.length, 1);
+  assert.ok(calls.filter((call) => new URL(call.url).pathname.endsWith("/result")).every((call) => new URL(call.url).searchParams.get("force") === "true"));
   assert.equal(await readFile(result.downloaded_files[0].path, "utf8"), "generated-content");
   const metadata = await readFile(metadataPath, "utf8");
   assert.equal(metadata.includes(token), false);
@@ -134,6 +135,7 @@ test("GPT editing carries the mask through the company's native mask field", asy
   const body = [...jobs.values()][0];
   assert.equal(body.modelFormat.version, "gpt-image-2.5-sunburst");
   assert.equal(body.payload.size, undefined);
+  assert.equal(body.payload.background, "opaque");
   assert.ok(body.payload.maskBase64.startsWith("data:image/png;base64,"));
   assert.equal((await readFile(metadataPath, "utf8")).includes("iVBORw0KGgoAAAANSUhEUgAAAAEAAAAB"), false);
 });
@@ -190,7 +192,7 @@ test("a missing company key fails before any network request", async () => {
 });
 
 test("a failed task is saved as failed and produces no downloaded files", async () => {
-  globalThis.fetch = (url, options) => String(url).endsWith("/result") ? json({ status: "failed", error: "upstream failure" }) : mockFetch(url, options);
+  globalThis.fetch = (url, options) => new URL(url).pathname.endsWith("/result") ? json({ status: "failed", error: "upstream failure" }) : mockFetch(url, options);
   const metadataPath = path.join(folder, "failed.json");
   await assert.rejects(callMivoTask("image.nano-banana", { prompt: "A chair" }, { metadataPath }), /generation failed/);
   assert.equal(JSON.parse(await readFile(metadataPath, "utf8")).status, "failed");
@@ -198,7 +200,7 @@ test("a failed task is saved as failed and produces no downloaded files", async 
 });
 
 test("a polling timeout keeps the message ID for later recovery", async () => {
-  globalThis.fetch = (url, options) => String(url).endsWith("/result") ? json({ status: "processing" }) : mockFetch(url, options);
+  globalThis.fetch = (url, options) => new URL(url).pathname.endsWith("/result") ? json({ status: "processing" }) : mockFetch(url, options);
   const metadataPath = path.join(folder, "timeout.json");
   await assert.rejects(pollMivoTask("image.nano-banana", "job-existing", { metadataPath, timeoutMs: 10, pollIntervalMs: 0 }), /still running/);
   assert.equal(JSON.parse(await readFile(metadataPath, "utf8")).request_id, "job-existing");
@@ -252,7 +254,7 @@ test("the generic capability runner resumes a completed task after download fail
 test("a partial audio batch reuses completed items before resuming the remaining task", async () => {
   let fail = true;
   globalThis.fetch = (url, options) => {
-    if (String(url).endsWith("/message/job-2/result") && fail) { fail = false; throw new Error("audio polling interrupted"); }
+    if (new URL(url).pathname.endsWith("/message/job-2/result") && fail) { fail = false; throw new Error("audio polling interrupted"); }
     return mockFetch(url, options);
   };
   const options = { prompt: "A wooden tap", outputDir: folder, prefix: "tap", count: 2, postprocess: false };
@@ -311,9 +313,9 @@ test("Tripo sends only caller parameters instead of incompatible catalog default
 test("resumed metadata redacts credentials even if the upstream response echoes them", async () => {
   let fail = true;
   globalThis.fetch = async (url, options) => {
-    if (String(url).endsWith("/result") && fail) { fail = false; throw new Error("polling interrupted"); }
+    if (new URL(url).pathname.endsWith("/result") && fail) { fail = false; throw new Error("polling interrupted"); }
     const response = await mockFetch(url, options);
-    if (String(url).endsWith("/result")) return json({ ...await response.json(), userSub: "mivo-test-key", authorization: `Bearer ${token}` });
+    if (new URL(url).pathname.endsWith("/result")) return json({ ...await response.json(), userSub: "mivo-test-key", authorization: `Bearer ${token}` });
     return response;
   };
   const options = { images: [image], prompt: "Remove the chair", outputDir: folder, outputSlug: "plate" };
